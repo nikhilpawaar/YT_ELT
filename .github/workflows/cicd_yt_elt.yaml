@@ -18,7 +18,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get changed files
+      - name: Get changed files for build
         id: changed-files-build
         uses: tj-actions/changed-files@v45
         with:
@@ -83,7 +83,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get changed files
+      - name: Get changed files for tests
         id: changed-files-tests
         uses: tj-actions/changed-files@v45
         with:
@@ -94,7 +94,7 @@ jobs:
             docker-compose.yaml
             .github/workflows/cicd_yt_elt.yaml
 
-      - name: Create .env file for GitHub Actions
+      - name: Create CI .env file
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           cat > .env <<EOF
@@ -131,15 +131,20 @@ jobs:
       - name: Prepare Airflow folders and permissions
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          mkdir -p logs dags plugins config data include tests
-          mkdir -p logs/scheduler logs/dag_processor logs/webserver logs/worker
+          mkdir -p ./logs ./logs/scheduler ./logs/dag_processor_manager ./logs/webserver ./logs/worker
+          mkdir -p ./dags ./data ./include ./plugins ./tests ./config
 
-          sudo chown -R 50000:0 logs dags plugins config data include tests
-          sudo chmod -R 775 logs dags plugins config data include tests
+          sudo chmod -R 777 ./logs
+          sudo chmod -R 777 ./data
+          sudo chmod -R 777 ./dags
+          sudo chmod -R 777 ./include
+          sudo chmod -R 777 ./plugins
+          sudo chmod -R 777 ./tests
+          sudo chmod -R 777 ./config
 
-          echo "Folder permissions after fix:"
+          echo "Folder permissions after chmod:"
           ls -la
-          ls -la logs
+          ls -la ./logs
 
       - name: Show Docker Compose config
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
@@ -153,50 +158,41 @@ jobs:
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: docker ps -a
 
-      - name: Wait for Postgres
+      - name: Print Postgres logs if failed
+        if: failure()
+        run: docker logs postgres || true
+
+      - name: Print Airflow scheduler logs if failed
+        if: failure()
+        run: docker compose logs airflow-scheduler || true
+
+      - name: Print Airflow worker logs if failed
+        if: failure()
+        run: docker compose logs airflow-worker || true
+
+      - name: Wait for Airflow Worker
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          echo "Waiting for Postgres to become healthy..."
+          echo "Waiting for airflow-worker to become healthy..."
           for i in {1..30}; do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' postgres || echo "not_found")
-            echo "Postgres status: $STATUS"
+            STATUS=$(docker compose ps airflow-worker | tail -n +2 || true)
+            echo "$STATUS"
 
-            if [ "$STATUS" = "healthy" ]; then
-              echo "Postgres is healthy."
+            if echo "$STATUS" | grep -i "healthy"; then
+              echo "airflow-worker is healthy"
               exit 0
             fi
 
             sleep 10
           done
 
-          echo "Postgres did not become healthy."
-          docker logs postgres
-          exit 1
-
-      - name: Wait for Airflow Worker
-        if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
-        run: |
-          echo "Waiting for Airflow Worker to become healthy..."
-          for i in {1..40}; do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' yt_elt-airflow-worker-1 || echo "not_found")
-            echo "Airflow worker status: $STATUS"
-
-            if [ "$STATUS" = "healthy" ]; then
-              echo "Airflow worker is healthy."
-              exit 0
-            fi
-
-            sleep 15
-          done
-
-          echo "Airflow worker did not become healthy."
-          docker ps -a
-          docker logs yt_elt-airflow-worker-1
+          echo "airflow-worker did not become healthy in time"
+          docker compose logs airflow-worker
           exit 1
 
       - name: Run Unit and Integration Tests
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
-        run: docker compose exec -T airflow-worker sh -c "pytest tests/ -v"
+        run: docker compose exec -T airflow-worker pytest tests/ -v
 
       - name: Run End-to-End DAG Tests
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
@@ -205,20 +201,8 @@ jobs:
 
           for DAG in "${DAG_NAMES[@]}"; do
             echo "Testing DAG: $DAG"
-            docker compose exec -T airflow-worker sh -c "airflow dags test $DAG"
+            docker compose exec -T airflow-worker airflow dags test "$DAG"
           done
-
-      - name: Print Postgres logs if failed
-        if: failure()
-        run: docker logs postgres || true
-
-      - name: Print Airflow Scheduler logs if failed
-        if: failure()
-        run: docker logs yt_elt-airflow-scheduler-1 || true
-
-      - name: Print Airflow Worker logs if failed
-        if: failure()
-        run: docker logs yt_elt-airflow-worker-1 || true
 
       - name: Tear down Docker Compose
         if: always()
