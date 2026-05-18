@@ -1,0 +1,7 @@
+
+apache-airflow
+sqlalchemy
+soda-core-postgres==3.3.14
+pytest==8.3.2
+
+requests
