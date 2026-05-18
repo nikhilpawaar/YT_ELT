@@ -73,7 +73,7 @@ jobs:
           cat > .env <<EOF
           DOCKERHUB_NAMESPACE=${{ vars.DOCKERHUB_NAMESPACE }}
           DOCKERHUB_REPOSITORY=${{ vars.DOCKERHUB_REPOSITORY }}
-          IMAGE_TAG=1.0.1
+          IMAGE_TAG=latest
 
           POSTGRES_CONN_USERNAME=${{ secrets.POSTGRES_CONN_USERNAME }}
           POSTGRES_CONN_PASSWORD=${{ secrets.POSTGRES_CONN_PASSWORD }}
@@ -92,7 +92,7 @@ jobs:
           ELT_DATABASE_USERNAME=${{ secrets.ELT_DATABASE_USERNAME }}
           ELT_DATABASE_PASSWORD=${{ secrets.ELT_DATABASE_PASSWORD }}
 
-          AIRFLOW_UID=50000
+          AIRFLOW_UID=${{ vars.AIRFLOW_UID }}
           _AIRFLOW_WWW_USER_USERNAME=${{ secrets.AIRFLOW_WWW_USER_USERNAME }}
           _AIRFLOW_WWW_USER_PASSWORD=${{ secrets.AIRFLOW_WWW_USER_PASSWORD }}
           AIRFLOW_WWW_USER_USERNAME=${{ secrets.AIRFLOW_WWW_USER_USERNAME }}
@@ -107,19 +107,20 @@ jobs:
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: docker compose config
 
-      - name: Start Docker Compose
+      - name: Start required Docker Compose services
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          docker compose up -d
+          docker compose up -d postgres redis airflow-init airflow-scheduler airflow-worker airflow-dag-processor
 
       - name: Wait for Postgres
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           for i in {1..30}; do
-            if docker exec postgres pg_isready -U postgres; then
+            if docker exec postgres pg_isready -U ${{ secrets.POSTGRES_CONN_USERNAME }}; then
               echo "Postgres is ready"
               exit 0
             fi
+
             echo "Waiting for Postgres..."
             sleep 5
           done
@@ -128,11 +129,35 @@ jobs:
           docker logs postgres
           exit 1
 
+      - name: Wait for Airflow Init
+        if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          for i in {1..30}; do
+            STATUS=$(docker inspect --format='{{.State.Status}}' yt_elt-airflow-init-1 || true)
+            EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' yt_elt-airflow-init-1 || true)
+
+            echo "Airflow init status: $STATUS"
+            echo "Airflow init exit code: $EXIT_CODE"
+
+            if [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" = "0" ]; then
+              echo "Airflow init completed successfully"
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "Airflow init did not complete successfully"
+          docker ps -a
+          docker logs yt_elt-airflow-init-1
+          exit 1
+
       - name: Wait for Airflow Worker
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           for i in {1..40}; do
             STATUS=$(docker inspect --format='{{.State.Health.Status}}' yt_elt-airflow-worker-1 || true)
+
             echo "Airflow worker status: $STATUS"
 
             if [ "$STATUS" = "healthy" ]; then
@@ -156,6 +181,10 @@ jobs:
         if: failure()
         run: docker logs postgres || true
 
+      - name: Print Airflow Init logs if failed
+        if: failure()
+        run: docker logs yt_elt-airflow-init-1 || true
+
       - name: Print Airflow Scheduler logs if failed
         if: failure()
         run: docker logs yt_elt-airflow-scheduler-1 || true
@@ -163,6 +192,10 @@ jobs:
       - name: Print Airflow Worker logs if failed
         if: failure()
         run: docker logs yt_elt-airflow-worker-1 || true
+
+      - name: Print Airflow DAG Processor logs if failed
+        if: failure()
+        run: docker logs yt_elt-airflow-dag-processor-1 || true
 
       - name: Run Unit and Integration Tests
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
