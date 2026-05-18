@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - "feature/*"
+      - 'feature/*'
   pull_request:
     branches:
       - main
@@ -18,7 +18,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get changed files for Docker build
+      - name: Get changed files
         id: changed-files-build
         uses: tj-actions/changed-files@v45
         with:
@@ -49,11 +49,41 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-push-image
 
+    env:
+      DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+      DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
+      IMAGE_TAG: latest
+
+      POSTGRES_CONN_USERNAME: ${{ secrets.POSTGRES_CONN_USERNAME }}
+      POSTGRES_CONN_PASSWORD: ${{ secrets.POSTGRES_CONN_PASSWORD }}
+      POSTGRES_CONN_HOST: ${{ secrets.POSTGRES_CONN_HOST }}
+      POSTGRES_CONN_PORT: ${{ secrets.POSTGRES_CONN_PORT }}
+
+      METADATA_DATABASE_NAME: ${{ secrets.METADATA_DATABASE_NAME }}
+      METADATA_DATABASE_USERNAME: ${{ secrets.METADATA_DATABASE_USERNAME }}
+      METADATA_DATABASE_PASSWORD: ${{ secrets.METADATA_DATABASE_PASSWORD }}
+
+      CELERY_BACKEND_NAME: ${{ secrets.CELERY_BACKEND_NAME }}
+      CELERY_BACKEND_USERNAME: ${{ secrets.CELERY_BACKEND_USERNAME }}
+      CELERY_BACKEND_PASSWORD: ${{ secrets.CELERY_BACKEND_PASSWORD }}
+
+      ELT_DATABASE_NAME: ${{ secrets.ELT_DATABASE_NAME }}
+      ELT_DATABASE_USERNAME: ${{ secrets.ELT_DATABASE_USERNAME }}
+      ELT_DATABASE_PASSWORD: ${{ secrets.ELT_DATABASE_PASSWORD }}
+
+      AIRFLOW_UID: ${{ vars.AIRFLOW_UID }}
+      _AIRFLOW_WWW_USER_USERNAME: ${{ secrets.AIRFLOW_WWW_USER_USERNAME }}
+      _AIRFLOW_WWW_USER_PASSWORD: ${{ secrets.AIRFLOW_WWW_USER_PASSWORD }}
+      FERNET_KEY: ${{ secrets.FERNET_KEY }}
+
+      API_KEY: ${{ secrets.API_KEY }}
+      CHANNEL_HANDLE: ${{ vars.CHANNEL_HANDLE }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get changed files for tests
+      - name: Get changed files
         id: changed-files-tests
         uses: tj-actions/changed-files@v45
         with:
@@ -64,57 +94,56 @@ jobs:
             docker-compose.yaml
             .github/workflows/cicd_yt_elt.yaml
 
-      - name: Create .env file for Docker Compose
+      - name: Create .env file for GitHub Actions
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           cat > .env <<EOF
-          # Dockerhub Image
-          DOCKERHUB_NAMESPACE=${{ vars.DOCKERHUB_NAMESPACE }}
-          DOCKERHUB_REPOSITORY=${{ vars.DOCKERHUB_REPOSITORY }}
-          IMAGE_TAG=latest
+          DOCKERHUB_NAMESPACE=${DOCKERHUB_NAMESPACE}
+          DOCKERHUB_REPOSITORY=${DOCKERHUB_REPOSITORY}
+          IMAGE_TAG=${IMAGE_TAG}
 
-          # Postgres connection
-          POSTGRES_CONN_USERNAME=${{ secrets.POSTGRES_CONN_USERNAME }}
-          POSTGRES_CONN_PASSWORD=${{ secrets.POSTGRES_CONN_PASSWORD }}
-          POSTGRES_CONN_HOST=${{ secrets.POSTGRES_CONN_HOST }}
-          POSTGRES_CONN_PORT=${{ secrets.POSTGRES_CONN_PORT }}
+          POSTGRES_CONN_USERNAME=${POSTGRES_CONN_USERNAME}
+          POSTGRES_CONN_PASSWORD=${POSTGRES_CONN_PASSWORD}
+          POSTGRES_CONN_HOST=${POSTGRES_CONN_HOST}
+          POSTGRES_CONN_PORT=${POSTGRES_CONN_PORT}
 
-          # Metadata database credentials
-          METADATA_DATABASE_NAME=${{ secrets.METADATA_DATABASE_NAME }}
-          METADATA_DATABASE_USERNAME=${{ secrets.METADATA_DATABASE_USERNAME }}
-          METADATA_DATABASE_PASSWORD=${{ secrets.METADATA_DATABASE_PASSWORD }}
+          METADATA_DATABASE_NAME=${METADATA_DATABASE_NAME}
+          METADATA_DATABASE_USERNAME=${METADATA_DATABASE_USERNAME}
+          METADATA_DATABASE_PASSWORD=${METADATA_DATABASE_PASSWORD}
 
-          # Celery database credentials
-          CELERY_BACKEND_NAME=${{ secrets.CELERY_BACKEND_NAME }}
-          CELERY_BACKEND_USERNAME=${{ secrets.CELERY_BACKEND_USERNAME }}
-          CELERY_BACKEND_PASSWORD=${{ secrets.CELERY_BACKEND_PASSWORD }}
+          CELERY_BACKEND_NAME=${CELERY_BACKEND_NAME}
+          CELERY_BACKEND_USERNAME=${CELERY_BACKEND_USERNAME}
+          CELERY_BACKEND_PASSWORD=${CELERY_BACKEND_PASSWORD}
 
-          # ELT database credentials
-          ELT_DATABASE_NAME=${{ secrets.ELT_DATABASE_NAME }}
-          ELT_DATABASE_USERNAME=${{ secrets.ELT_DATABASE_USERNAME }}
-          ELT_DATABASE_PASSWORD=${{ secrets.ELT_DATABASE_PASSWORD }}
+          ELT_DATABASE_NAME=${ELT_DATABASE_NAME}
+          ELT_DATABASE_USERNAME=${ELT_DATABASE_USERNAME}
+          ELT_DATABASE_PASSWORD=${ELT_DATABASE_PASSWORD}
 
-          # Airflow params
-          AIRFLOW_UID=${{ vars.AIRFLOW_UID }}
-          _AIRFLOW_WWW_USER_USERNAME=${{ secrets.AIRFLOW_WWW_USER_USERNAME }}
-          _AIRFLOW_WWW_USER_PASSWORD=${{ secrets.AIRFLOW_WWW_USER_PASSWORD }}
-          FERNET_KEY=${{ secrets.FERNET_KEY }}
+          AIRFLOW_UID=${AIRFLOW_UID}
+          _AIRFLOW_WWW_USER_USERNAME=${_AIRFLOW_WWW_USER_USERNAME}
+          _AIRFLOW_WWW_USER_PASSWORD=${_AIRFLOW_WWW_USER_PASSWORD}
+          FERNET_KEY=${FERNET_KEY}
 
-          # Youtube params
-          API_KEY=${{ secrets.API_KEY }}
-          CHANNEL_HANDLE=${{ vars.CHANNEL_HANDLE }}
+          API_KEY=${API_KEY}
+          CHANNEL_HANDLE=${CHANNEL_HANDLE}
           EOF
 
-      - name: Prepare Airflow folders permissions
+      - name: Prepare Airflow folders and permissions
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          mkdir -p ./dags ./logs ./plugins ./config ./data ./include
-          sudo chown -R 50000:0 ./dags ./logs ./plugins ./config ./data ./include
-          sudo chmod -R 775 ./dags ./logs ./plugins ./config ./data ./include
+          mkdir -p logs dags plugins config data include tests
+          mkdir -p logs/scheduler logs/dag_processor logs/webserver logs/worker
 
-      - name: Pull Docker images
+          sudo chown -R 50000:0 logs dags plugins config data include tests
+          sudo chmod -R 775 logs dags plugins config data include tests
+
+          echo "Folder permissions after fix:"
+          ls -la
+          ls -la logs
+
+      - name: Show Docker Compose config
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
-        run: docker compose pull
+        run: docker compose config
 
       - name: Start Docker Compose
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
@@ -124,22 +153,50 @@ jobs:
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: docker ps -a
 
-      - name: Print Postgres logs if needed
+      - name: Wait for Postgres
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          docker logs postgres || true
+          echo "Waiting for Postgres to become healthy..."
+          for i in {1..30}; do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' postgres || echo "not_found")
+            echo "Postgres status: $STATUS"
 
-      - name: Wait for Airflow services
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Postgres is healthy."
+              exit 0
+            fi
+
+            sleep 10
+          done
+
+          echo "Postgres did not become healthy."
+          docker logs postgres
+          exit 1
+
+      - name: Wait for Airflow Worker
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          echo "Waiting for Airflow services to start..."
-          sleep 60
+          echo "Waiting for Airflow Worker to become healthy..."
+          for i in {1..40}; do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' yt_elt-airflow-worker-1 || echo "not_found")
+            echo "Airflow worker status: $STATUS"
+
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Airflow worker is healthy."
+              exit 0
+            fi
+
+            sleep 15
+          done
+
+          echo "Airflow worker did not become healthy."
           docker ps -a
+          docker logs yt_elt-airflow-worker-1
+          exit 1
 
       - name: Run Unit and Integration Tests
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
-        run: |
-          docker compose exec -T airflow-worker pytest tests/ -v
+        run: docker compose exec -T airflow-worker sh -c "pytest tests/ -v"
 
       - name: Run End-to-End DAG Tests
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
@@ -148,29 +205,20 @@ jobs:
 
           for DAG in "${DAG_NAMES[@]}"; do
             echo "Testing DAG: $DAG"
-            docker compose exec -T airflow-worker airflow dags test "$DAG"
+            docker compose exec -T airflow-worker sh -c "airflow dags test $DAG"
           done
 
-      - name: Print Airflow logs if failed
+      - name: Print Postgres logs if failed
         if: failure()
-        run: |
-          echo "===== Docker containers ====="
-          docker ps -a || true
+        run: docker logs postgres || true
 
-          echo "===== Postgres logs ====="
-          docker logs postgres || true
+      - name: Print Airflow Scheduler logs if failed
+        if: failure()
+        run: docker logs yt_elt-airflow-scheduler-1 || true
 
-          echo "===== Airflow scheduler logs ====="
-          docker compose logs airflow-scheduler || true
-
-          echo "===== Airflow dag processor logs ====="
-          docker compose logs airflow-dag-processor || true
-
-          echo "===== Airflow worker logs ====="
-          docker compose logs airflow-worker || true
-
-          echo "===== Airflow webserver logs ====="
-          docker compose logs airflow-webserver || true
+      - name: Print Airflow Worker logs if failed
+        if: failure()
+        run: docker logs yt_elt-airflow-worker-1 || true
 
       - name: Tear down Docker Compose
         if: always()
