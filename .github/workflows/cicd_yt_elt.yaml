@@ -111,9 +111,10 @@ jobs:
       - name: Prepare Airflow folders and permissions
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
-          mkdir -p logs dags plugins config data include tests
-          sudo chown -R 50000:0 logs dags plugins config data include tests
-          sudo chmod -R 775 logs dags plugins config data include tests
+          mkdir -p logs/scheduler logs/dag_processor_manager logs/dag_processor
+          mkdir -p dags plugins config data include tests
+
+          sudo chmod -R 777 logs dags plugins config data include tests
 
       - name: Show Docker Compose config
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
