@@ -171,26 +171,7 @@ jobs:
           docker ps -a
           docker logs yt_elt-airflow-webserver-1 || true
           exit 1
-#
-#      - name: Wait for Airflow Worker
-#        if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
-#        run: |
-#          for i in {1..40}; do
-#            STATUS=$(docker inspect --format='{{.State.Health.Status}}' yt_elt-airflow-worker-1 || true)
-#            echo "Airflow worker status: $STATUS"
-#
-#            if [ "$STATUS" = "healthy" ]; then
-#              echo "Airflow worker is healthy"
-#              exit 0
-#            fi
-#
-#            sleep 10
-#          done
-#
-#          echo "Airflow worker did not become healthy"
-#          docker ps -a
-#          docker logs yt_elt-airflow-worker-1 || true
-#          exit 1
+
       - name: Wait for Airflow containers to stabilize
         if: steps.changed-files-tests.outputs.any_changed == 'true' || github.event_name == 'workflow_dispatch'
         run: sleep 90
