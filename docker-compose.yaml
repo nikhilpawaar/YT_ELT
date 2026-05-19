@@ -32,7 +32,7 @@ x-airflow-common:
     - ./dags:/opt/airflow/dags
     - ./data:/opt/airflow/data
     - ./include:/opt/airflow/include
-    - ./logs:/opt/airflow/logs
+    - airflow-logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
     - ./tests:/opt/airflow/tests
 
@@ -197,7 +197,7 @@ services:
       - ./dags:/opt/airflow/dags
       - ./data:/opt/airflow/data
       - ./include:/opt/airflow/include
-      - ./logs:/opt/airflow/logs
+      - airflow-logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
       - ./tests:/opt/airflow/tests
 
@@ -215,3 +215,4 @@ services:
 
 volumes:
   postgres-db-volume:
+  airflow-logs:
